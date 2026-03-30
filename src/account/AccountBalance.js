@@ -92,6 +92,35 @@ export default class AccountBalance {
     }
 
     /**
+     * @internal
+     * @param {object} data - Mirror node REST API response for GET /api/v1/accounts/{id}
+     * @returns {AccountBalance}
+     */
+    static _fromMirrorNodeResponse(data) {
+        const tokenBalances = new TokenBalanceMap();
+        const tokenDecimals = new TokenDecimalMap();
+
+        if (data.balance != null && data.balance.tokens != null) {
+            for (const token of data.balance.tokens) {
+                const tokenId = TokenId.fromString(token.token_id);
+                tokenBalances._set(
+                    tokenId,
+                    Long.fromNumber(token.balance),
+                );
+                tokenDecimals._set(tokenId, 0);
+            }
+        }
+
+        return new AccountBalance({
+            hbars: Hbar.fromTinybars(
+                data.balance != null ? data.balance.balance : 0,
+            ),
+            tokens: tokenBalances,
+            tokenDecimals,
+        });
+    }
+
+    /**
      * @returns {HieroProto.proto.ICryptoGetAccountBalanceResponse}
      */
     _toProtobuf() {

@@ -1,44 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import Query, { QUERY_REGISTRY } from "../query/Query.js";
 import AccountId from "./AccountId.js";
 import ContractId from "../contract/ContractId.js";
 import AccountBalance from "./AccountBalance.js";
+import Hbar from "../Hbar.js";
 
 /**
- * @namespace proto
- * @typedef {import("@hiero-ledger/proto").proto.IQuery} HieroProto.proto.IQuery
- * @typedef {import("@hiero-ledger/proto").proto.IQueryHeader} HieroProto.proto.IQueryHeader
- * @typedef {import("@hiero-ledger/proto").proto.IResponse} HieroProto.proto.IResponse
- * @typedef {import("@hiero-ledger/proto").proto.IResponseHeader} HieroProto.proto.IResponseHeader
- * @typedef {import("@hiero-ledger/proto").proto.ICryptoGetAccountBalanceQuery} HieroProto.proto.ICryptoGetAccountBalanceQuery
- * @typedef {import("@hiero-ledger/proto").proto.ICryptoGetAccountBalanceResponse} HieroProto.proto.ICryptoGetAccountBalanceResponse
- */
-
-/**
- * @typedef {import("../channel/Channel.js").default} Channel
  * @typedef {import("../client/Client.js").default<*, *>} Client
  */
 
 /**
  * Get the balance of a Hedera™ crypto-currency account.
  *
- * This returns only the balance, so its a smaller and faster reply
+ * This returns only the balance, so it is a smaller and faster reply
  * than AccountInfoQuery.
  *
- * This query is free.
- *
- * @augments {Query<AccountBalance>}
+ * This query is free and uses the mirror node REST API.
  */
-export default class AccountBalanceQuery extends Query {
+export default class AccountBalanceQuery {
     /**
      * @param {object} [props]
      * @param {AccountId | string} [props.accountId]
      * @param {ContractId | string} [props.contractId]
      */
     constructor(props = {}) {
-        super();
-
         /**
          * @type {?AccountId}
          * @private
@@ -51,6 +36,15 @@ export default class AccountBalanceQuery extends Query {
          */
         this._contractId = null;
 
+        /** @private */
+        this._maxAttempts = 10;
+
+        /** @private */
+        this._minBackoff = 250;
+
+        /** @private */
+        this._maxBackoff = 8000;
+
         if (props.accountId != null) {
             this.setAccountId(props.accountId);
         }
@@ -58,29 +52,6 @@ export default class AccountBalanceQuery extends Query {
         if (props.contractId != null) {
             this.setContractId(props.contractId);
         }
-    }
-
-    /**
-     * @internal
-     * @param {HieroProto.proto.IQuery} query
-     * @returns {AccountBalanceQuery}
-     */
-    static _fromProtobuf(query) {
-        const balance =
-            /** @type {HieroProto.proto.ICryptoGetAccountBalanceQuery} */ (
-                query.cryptogetAccountBalance
-            );
-
-        return new AccountBalanceQuery({
-            accountId:
-                balance.accountID != null
-                    ? AccountId._fromProtobuf(balance.accountID)
-                    : undefined,
-            contractId:
-                balance.contractID != null
-                    ? ContractId._fromProtobuf(balance.contractID)
-                    : undefined,
-        });
     }
 
     /**
@@ -132,107 +103,185 @@ export default class AccountBalanceQuery extends Query {
     }
 
     /**
-     * @protected
-     * @override
-     * @returns {boolean}
+     * @param {number} maxAttempts
+     * @returns {this}
      */
-    _isPaymentRequired() {
-        return false;
+    setMaxAttempts(maxAttempts) {
+        this._maxAttempts = maxAttempts;
+        return this;
     }
 
     /**
-     * @param {Client} client
+     * @param {number} minBackoff
+     * @returns {this}
      */
-    _validateChecksums(client) {
-        if (this._accountId != null) {
-            this._accountId.validateChecksum(client);
-        }
-
-        if (this._contractId != null) {
-            this._contractId.validateChecksum(client);
-        }
+    setMinBackoff(minBackoff) {
+        this._minBackoff = minBackoff;
+        return this;
     }
 
     /**
-     * @override
-     * @internal
-     * @param {Channel} channel
-     * @param {HieroProto.proto.IQuery} request
-     * @returns {Promise<HieroProto.proto.IResponse>}
+     * @param {number} maxBackoff
+     * @returns {this}
      */
-    _execute(channel, request) {
-        return channel.crypto.cryptoGetBalance(request);
+    setMaxBackoff(maxBackoff) {
+        this._maxBackoff = maxBackoff;
+        return this;
     }
 
     /**
-     * @override
-     * @override
-     * @internal
-     * @param {HieroProto.proto.IResponse} response
-     * @returns {HieroProto.proto.IResponseHeader}
+     * Returns zero cost since this query uses the free mirror node REST API.
+     *
+     * @returns {Promise<Hbar>}
      */
-    _mapResponseHeader(response) {
-        const cryptogetAccountBalance =
-            /** @type {HieroProto.proto.ICryptoGetAccountBalanceResponse} */ (
-                response.cryptogetAccountBalance
-            );
-        return /** @type {HieroProto.proto.IResponseHeader} */ (
-            cryptogetAccountBalance.header
-        );
+    getCost() {
+        return Promise.resolve(new Hbar(0));
     }
 
+    // Backward-compatible no-op stubs for callers that chain gRPC-specific methods
+
     /**
-     * @override
-     * @override
-     * @internal
-     * @param {HieroProto.proto.IResponse} response
-     * @param {AccountId} nodeAccountId
-     * @param {HieroProto.proto.IQuery} request
-     * @returns {Promise<AccountBalance>}
+     * @param {AccountId[]} _nodeAccountIds
+     * @returns {this}
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _mapResponse(response, nodeAccountId, request) {
-        const cryptogetAccountBalance =
-            /** @type {HieroProto.proto.ICryptoGetAccountBalanceResponse} */ (
-                response.cryptogetAccountBalance
+    setNodeAccountIds(_nodeAccountIds) {
+        return this;
+    }
+
+    /**
+     * @param {Hbar} _queryPayment
+     * @returns {this}
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    setQueryPayment(_queryPayment) {
+        return this;
+    }
+
+    /**
+     * @param {Hbar} _maxQueryPayment
+     * @returns {this}
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    setMaxQueryPayment(_maxQueryPayment) {
+        return this;
+    }
+
+    /**
+     * @param {number} _grpcDeadline
+     * @returns {this}
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    setGrpcDeadline(_grpcDeadline) {
+        return this;
+    }
+
+    /**
+     * Execute this query using the signer (Wallet flow).
+     *
+     * @param {{ call: (request: this) => Promise<AccountBalance> }} signer
+     * @returns {Promise<AccountBalance>}
+     */
+    executeWithSigner(signer) {
+        return signer.call(this);
+    }
+
+    /**
+     * No-op for Wallet.call() compatibility.
+     *
+     * @param {AccountId} _accountId
+     * @param {import("../PublicKey.js").default} _publicKey
+     * @param {(message: Uint8Array) => Promise<Uint8Array>} _transactionSigner
+     * @returns {this}
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _setOperatorWith(_accountId, _publicKey, _transactionSigner) {
+        return this;
+    }
+
+    /**
+     * Execute this query against the mirror node REST API.
+     *
+     * @param {Client} client
+     * @returns {Promise<AccountBalance>}
+     */
+    async execute(client) {
+        if (this._accountId == null && this._contractId == null) {
+            throw new Error(
+                "either account ID or contract ID must be set before executing",
             );
-        return Promise.resolve(
-            AccountBalance._fromProtobuf(cryptogetAccountBalance),
+        }
+
+        if (client.isAutoValidateChecksumsEnabled()) {
+            if (this._accountId != null) {
+                this._accountId.validateChecksum(client);
+            }
+            if (this._contractId != null) {
+                this._contractId.validateChecksum(client);
+            }
+        }
+
+        const id =
+            this._accountId != null
+                ? this._accountId.toString()
+                : /** @type {ContractId} */ (this._contractId).toString();
+
+        const mirrorUrl = `${client.mirrorRestApiBaseUrl}/accounts/${id}`;
+
+        let lastError = null;
+
+        for (let attempt = 0; attempt < this._maxAttempts; attempt++) {
+            if (attempt > 0) {
+                const backoff = Math.min(
+                    this._minBackoff * Math.pow(2, attempt - 1),
+                    this._maxBackoff,
+                );
+                await new Promise((resolve) => setTimeout(resolve, backoff));
+            }
+
+            try {
+                const response = await fetch(mirrorUrl);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return AccountBalance._fromMirrorNodeResponse(data);
+                }
+
+                if (response.status === 404) {
+                    throw new Error(
+                        `account ${id} does not exist on the mirror node`,
+                    );
+                }
+
+                // Retry on 429 (rate limit) and 5xx (server errors)
+                if (response.status === 429 || response.status >= 500) {
+                    lastError = new Error(
+                        `mirror node returned HTTP ${response.status}`,
+                    );
+                    continue;
+                }
+
+                // Non-retryable error
+                throw new Error(
+                    `mirror node returned HTTP ${response.status}`,
+                );
+            } catch (error) {
+                // 404 and non-retryable errors are rethrown immediately
+                if (
+                    error instanceof Error &&
+                    (error.message.includes("does not exist") ||
+                        (error.message.includes("mirror node returned HTTP") &&
+                            !error.message.includes("429") &&
+                            !error.message.includes("5")))
+                ) {
+                    throw error;
+                }
+                lastError = error;
+            }
+        }
+
+        throw new Error(
+            `failed to query account balance after ${this._maxAttempts} attempts: ${lastError != null ? /** @type {Error} */ (lastError).message : "unknown error"}`,
         );
     }
-
-    /**
-     * @override
-     * @internal
-     * @param {HieroProto.proto.IQueryHeader} header
-     * @returns {HieroProto.proto.IQuery}
-     */
-    _onMakeRequest(header) {
-        return {
-            cryptogetAccountBalance: {
-                header,
-                accountID:
-                    this._accountId != null
-                        ? this._accountId._toProtobuf()
-                        : null,
-                contractID:
-                    this._contractId != null
-                        ? this._contractId._toProtobuf()
-                        : null,
-            },
-        };
-    }
-
-    /**
-     * @returns {string}
-     */
-    _getLogId() {
-        return `AccountBalanceQuery:${this._timestamp.toString()}`;
-    }
 }
-
-QUERY_REGISTRY.set(
-    "cryptogetAccountBalance",
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    AccountBalanceQuery._fromProtobuf,
-);
